@@ -103,8 +103,6 @@ namespace BrunoMikoski.SmartSymbolicate
 
 
         private GUIStyle outputTextFieldStyle;
-        private float processingNormalizedValue;
-        private string processingDisplayLabel;
         private Vector2 inputScrollView;
         private bool isMissingUnityVersion;
         private string desiredUnityVersion;
@@ -137,7 +135,8 @@ namespace BrunoMikoski.SmartSymbolicate
 
         private void OnGUI()
         {
-            outputTextFieldStyle ??= new GUIStyle(EditorStyles.textArea) { wordWrap = true, richText = true };
+            if (outputTextFieldStyle == null)
+                outputTextFieldStyle = new GUIStyle(EditorStyles.textArea) { wordWrap = true, richText = true };
 
             DrawPaths();
             DrawInput();
@@ -157,7 +156,6 @@ namespace BrunoMikoski.SmartSymbolicate
                 GUILayout.ExpandWidth(true));
             EditorGUILayout.EndScrollView();
 
-            EditorGUI.ProgressBar(EditorGUILayout.GetControlRect(), processingNormalizedValue, processingDisplayLabel);
             EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(crashInput) || string.IsNullOrEmpty(unityHubPath) || string.IsNullOrEmpty(projectSymbolsPath));
             if (GUILayout.Button("Parse"))
             {
@@ -170,7 +168,6 @@ namespace BrunoMikoski.SmartSymbolicate
 
         private void ParseInput()
         {
-            processingNormalizedValue = 0;
             GatherDataFromInput();
             if (addressesDatas.Count == 0)
             {
@@ -187,11 +184,12 @@ namespace BrunoMikoski.SmartSymbolicate
 
             StringBuilder parsedResults = new StringBuilder();
 
+            EditorUtility.DisplayProgressBar("Processing Symbols", "Start", 0);
             for (int i = 0; i < addressesDatas.Count; i++)
             {
                 AddressesData addressesData = addressesDatas[i];
-                processingNormalizedValue = (float)i / addressesDatas.Count;
-                processingDisplayLabel = $"Processing {addressesData.MemoryAddress}";
+
+                EditorUtility.DisplayProgressBar("Processing Symbols", $"Processing {addressesData.MemoryAddress}", (float)i / addressesDatas.Count);
 
                 if (!TryGetLibPath(addressesData.LibName, out string knowPath))
                 {
@@ -227,9 +225,8 @@ namespace BrunoMikoski.SmartSymbolicate
                 }
             }
 
-            processingNormalizedValue = 1;
-            processingDisplayLabel = "Done";
             output = parsedResults.ToString();
+            EditorUtility.ClearProgressBar();
         }
         
         private bool TryGetLibPath(string targetLibName, out string libKnowPath)
