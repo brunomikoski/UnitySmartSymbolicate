@@ -21,7 +21,7 @@ namespace BrunoMikoski.SmartSymbolicate
         private const string LIB_IL2CPP_DEBUG_NAME = "libil2cpp.dbg.so";
         private const string LIB_IL2CPP_SYM_NAME = "libil2cpp.sym.so";
         private const string LIB_UNITY_NAME = "libunity.sym.so";
-        
+
         private class AddressesData
         {
             private string libName;
@@ -73,7 +73,7 @@ namespace BrunoMikoski.SmartSymbolicate
 
         private string unityHubPath
         {
-            get => EditorPrefs.GetString(UNITY_PATH_STORAGE_KEY, @"C:/Program Files/Unity/Hub/Editor");
+            get => EditorPrefs.GetString(UNITY_PATH_STORAGE_KEY, @"C:\Program Files\Unity\Hub\Editor");
             set => EditorPrefs.SetString(UNITY_PATH_STORAGE_KEY, value);
         }
 
@@ -85,7 +85,8 @@ namespace BrunoMikoski.SmartSymbolicate
         
         private string crashInput;
         private string unityVersion;
-
+        private string output;
+        private List<AddressesData> addressesDatas;
 
         private ReleaseType releaseType = ReleaseType.Release;
         private ScriptingBackendType scriptingBackendType = ScriptingBackendType.il2cpp;
@@ -96,25 +97,22 @@ namespace BrunoMikoski.SmartSymbolicate
         private string[] cpuTypeNames = Array.Empty<string>();
         private string[] availableUnityVersions = Array.Empty<string>();
         
-        
         private bool validUnityHubFolder;
-        private string output;
-        private Vector2 outputScrollView;
-
-
-        private GUIStyle outputTextFieldStyle;
-        private Vector2 inputScrollView;
         private bool isMissingUnityVersion;
         private string desiredUnityVersion;
         private bool isMissingCPUType;
         private string desiredCPUType;
-        private List<AddressesData> addressesDatas;
+        
+        private Vector2 outputScrollView;
+        private GUIStyle outputTextFieldStyle;
+        private Vector2 inputScrollView;
+        private bool printCommands;
 
         [MenuItem("Tools/Open SmartSymbolicate")]
         public static void ShowExample()
         {
             SmartSymbolicateWindow wnd = GetWindow<SmartSymbolicateWindow>();
-            wnd.titleContent = new GUIContent("SmartSymbolicate");
+            wnd.titleContent = new GUIContent("Smart Symbolicate");
         }
 
         private void OnEnable()
@@ -149,7 +147,6 @@ namespace BrunoMikoski.SmartSymbolicate
             EditorGUILayout.BeginVertical("HelpBox");
             EditorGUILayout.LabelField("Output", EditorStyles.foldoutHeader);
             EditorGUILayout.Separator();
-
 
             outputScrollView = EditorGUILayout.BeginScrollView(outputScrollView, false, true, GUILayout.ExpandHeight(true));
             output = EditorGUILayout.TextArea(output, outputTextFieldStyle, GUILayout.ExpandHeight(true),
@@ -203,6 +200,11 @@ namespace BrunoMikoski.SmartSymbolicate
                     continue;
                 }
 
+                if (printCommands)
+                {
+                    parsedResults.AppendLine($"<b>Executing Command:</b> {targetADDR2} -f -C -e \"{knowPath}\" {addressesData.MemoryAddress}");
+                }
+                
                 using (System.Diagnostics.Process process = new System.Diagnostics.Process())
                 {
                     process.StartInfo.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden;
@@ -217,9 +219,7 @@ namespace BrunoMikoski.SmartSymbolicate
                     parsedResults.AppendLine($"<b>{addressesData.GetLibraryDisplayName()}</b> [<i>{addressesData.MemoryAddress}</i>] => {process.StandardOutput.ReadToEnd()}");
                     string error = process.StandardError.ReadToEnd();
                     if (!string.IsNullOrEmpty(error))
-                    {
-                        parsedResults.AppendLine($"{addressesData} => {error}");
-                    }
+                        parsedResults.AppendLine($"<color=red>[Error]</color> {addressesData} => {error}");
 
                     process.WaitForExit();
                 }
@@ -339,13 +339,14 @@ namespace BrunoMikoski.SmartSymbolicate
                     int selectedUnityVersion = Mathf.Clamp(Array.IndexOf(availableUnityVersions, unityVersion), 0,
                         availableUnityVersions.Length);
                     unityVersion = availableUnityVersions[EditorGUILayout.Popup(selectedUnityVersion, availableUnityVersions)];
-                    
+                    printCommands = EditorGUILayout.ToggleLeft("Print Commands", printCommands);
                 }
             }
             else
             {
                 EditorGUILayout.HelpBox("Invalid Unity Hub Folder", MessageType.Error);
             }
+
             EditorGUILayout.EndVertical();
             
             EditorGUILayout.BeginVertical("HelpBox", GUILayout.Width(100));
@@ -369,6 +370,7 @@ namespace BrunoMikoski.SmartSymbolicate
                 EditorGUILayout.HelpBox($"Missing CPU Type {desiredCPUType}", MessageType.Error);
             }
             EditorGUILayout.EndVertical();
+            
             
             EditorGUILayout.EndHorizontal();
 
@@ -521,9 +523,10 @@ namespace BrunoMikoski.SmartSymbolicate
 
         private void ValidateUnityHubPath(string targetUnityPath)
         {
+            targetUnityPath = targetUnityPath.Replace("/",@"\");
             unityHubPath = targetUnityPath;
 
-            if (!targetUnityPath.EndsWith(@"Hub/Editor"))
+            if (!targetUnityPath.EndsWith(@"Hub\Editor"))
             {
                 validUnityHubFolder = false;
                 return;
