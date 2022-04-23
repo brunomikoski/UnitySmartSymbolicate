@@ -1,19 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace BrunoMikoski.SmartSymbolicate
 {
     public class SmartSymbolicateWindow : EditorWindow
     {
-        private const string ADDR2LINE_32_PATH = @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-addr2line.exe";
-        private const string ADDR2LINE_64_PATH = @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\aarch64-linux-android-4.9\prebuilt\windows-x86_64\bin\aarch64-linux-android-addr2line.exe";
-
         private const string UNITY_PATH_STORAGE_KEY = "SmartSymbolicate.UnityPathStorageKey";
         private const string PROJECT_SYMBOLS_PATH_STORAGE_KEY = "SmartSymbolicate.ProjectSymbolsStorageKey";
 
@@ -21,6 +20,47 @@ namespace BrunoMikoski.SmartSymbolicate
         private const string LIB_IL2CPP_DEBUG_NAME = "libil2cpp.dbg.so";
         private const string LIB_IL2CPP_SYM_NAME = "libil2cpp.sym.so";
         private const string LIB_UNITY_NAME = "libunity.sym.so";
+
+        private static string Addr2Line32Path 
+        {
+            get
+            {
+                if (Application.platform == RuntimePlatform.WindowsEditor)
+                    return @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-addr2line.exe";
+                return @"PlaybackEngines/AndroidPlayer/NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/darwin-x86_64/bin/arm-linux-androideabi-addr2line";
+            }
+        }
+
+        private static string Addr2Line64Path 
+        {
+            get
+            {
+                if (Application.platform == RuntimePlatform.WindowsEditor)
+                    return @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\aarch64-linux-android-4.9\prebuilt\windows-x86_64\bin\aarch64-linux-android-addr2line.exe";
+                return @"PlaybackEngines/AndroidPlayer/NDK/toolchains/aarch64-linux-android-4.9/prebuilt/darwin-x86_64/bin/aarch64-linux-android-addr2line";
+            }
+        }
+        
+        private static string DefaultUnityInstallationFolder
+        {
+            get
+            {
+                if (Application.platform == RuntimePlatform.OSXEditor)
+                    return @"/Applications/Unity/Hub/Editor";
+                return @"C:\Program Files\Unity\Hub\Editor";
+            }
+        }
+        
+        private static string UnityVariationsPath
+        {
+            get
+            {
+                if (Application.platform == RuntimePlatform.WindowsEditor)
+                    return @"Editor\Data\PlaybackEngines\AndroidPlayer\Variations";
+                return @"PlaybackEngines/AndroidPlayer/Variations";
+            }
+        }
+        
 
         private class AddressesData
         {
@@ -73,7 +113,7 @@ namespace BrunoMikoski.SmartSymbolicate
 
         private string unityHubPath
         {
-            get => EditorPrefs.GetString(UNITY_PATH_STORAGE_KEY, @"C:\Program Files\Unity\Hub\Editor");
+            get => EditorPrefs.GetString(UNITY_PATH_STORAGE_KEY, DefaultUnityInstallationFolder);
             set => EditorPrefs.SetString(UNITY_PATH_STORAGE_KEY, value);
         }
 
@@ -107,6 +147,8 @@ namespace BrunoMikoski.SmartSymbolicate
         private GUIStyle outputTextFieldStyle;
         private Vector2 inputScrollView;
         private bool printCommands;
+
+       
 
         [MenuItem("Tools/Open SmartSymbolicate")]
         public static void ShowExample()
@@ -205,9 +247,9 @@ namespace BrunoMikoski.SmartSymbolicate
                     parsedResults.AppendLine($"<b>Executing Command:</b> {targetADDR2} -f -C -e \"{knowPath}\" {addressesData.MemoryAddress}");
                 }
                 
-                using (System.Diagnostics.Process process = new System.Diagnostics.Process())
+                using (Process process = new Process())
                 {
-                    process.StartInfo.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden;
+                    process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
                     process.StartInfo.FileName = targetADDR2;
                     process.StartInfo.Arguments = $"-f -C -e \"{knowPath}\" {addressesData.MemoryAddress}";
                     process.StartInfo.UseShellExecute = false;
@@ -216,6 +258,7 @@ namespace BrunoMikoski.SmartSymbolicate
                     process.StartInfo.RedirectStandardInput = true;
                     process.StartInfo.RedirectStandardError = true;
                     process.Start();
+                    
                     parsedResults.AppendLine($"<b>{addressesData.GetLibraryDisplayName()}</b> [<i>{addressesData.MemoryAddress}</i>] => {process.StandardOutput.ReadToEnd()}");
                     string error = process.StandardError.ReadToEnd();
                     if (!string.IsNullOrEmpty(error))
@@ -234,7 +277,7 @@ namespace BrunoMikoski.SmartSymbolicate
             if (targetLibName.Equals("libunity", StringComparison.Ordinal))
             {
                 string targetPath = Path.Combine(unityHubPath, unityVersion);
-                targetPath = Path.Combine(targetPath, @"Editor\Data\PlaybackEngines\AndroidPlayer\Variations");
+                targetPath = Path.Combine(targetPath, UnityVariationsPath);
 
                 targetPath = Path.Combine(targetPath, scriptingBackendTypeNames[(int)releaseType]);
                 targetPath = Path.Combine(targetPath, releaseTypeDisplayNames[(int)releaseType]);
@@ -279,9 +322,9 @@ namespace BrunoMikoski.SmartSymbolicate
         private string GetTargetAddr2line()
         {
             if (cpuType == CPUType.arm64_v8a)
-                return Path.Combine(Path.Combine(unityHubPath, unityVersion), ADDR2LINE_64_PATH);
+                return Path.Combine(Path.Combine(unityHubPath, unityVersion), Addr2Line64Path);
 
-            return Path.Combine(Path.Combine(unityHubPath, unityVersion), ADDR2LINE_32_PATH);
+            return Path.Combine(Path.Combine(unityHubPath, unityVersion), Addr2Line32Path);
         }
 
         private void GatherDataFromInput()
@@ -523,22 +566,22 @@ namespace BrunoMikoski.SmartSymbolicate
 
         private void ValidateUnityHubPath(string targetUnityPath)
         {
-            targetUnityPath = targetUnityPath.Replace("/",@"\");
             unityHubPath = targetUnityPath;
 
-            if (!targetUnityPath.EndsWith(@"Hub\Editor"))
-            {
-                validUnityHubFolder = false;
-                return;
-            }
-            
             string[] childDirectories = Directory.GetDirectories(targetUnityPath);
-            availableUnityVersions = new string[childDirectories.Length];
+
+            List<string> validUnityPaths = new List<string>();
 
             for (int i = 0; i < childDirectories.Length; i++)
-                availableUnityVersions[i] = Path.GetFileName(childDirectories[i]);
-
-            validUnityHubFolder = true;
+            {
+                string folderName = Path.GetFileName(childDirectories[i]);
+                if (!Regex.Match(folderName, @"^[1-9]\d*(\.[1-9]\d*)*[a-z]*[1-9]").Success)
+                    continue;
+                
+                validUnityPaths.Add(folderName);
+            }
+            availableUnityVersions = validUnityPaths.ToArray();
+            validUnityHubFolder = availableUnityVersions.Length > 0;
         }
     }
 }
