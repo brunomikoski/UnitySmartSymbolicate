@@ -38,10 +38,14 @@
 
 
 ## Features
-- Automatically identify
+- Automatically identify Google Play Crash reports information and settings
 
 ## How to use?
-- Animation Sequencer rely on DOTween for now, so it a requirement that you have `DOTween` on your project with properly created `asmdef` for it (Created by the `DOTween` setup panel)
+- Define unity installation folder (It should be the folder where all your unity installations are)
+- Define your project [symbols](https://docs.unity3d.com/2020.3/Documentation/Manual/android-symbols.html)  folder
+- Paste google play crash rates on the input
+- Validate information
+- Press Parse
 
 ## FAQ
 
