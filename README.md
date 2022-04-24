@@ -1,6 +1,7 @@
 # Unity Smart Symbolicate
 
-<img src=https://user-images.githubusercontent.com/600419/164972718-570c05f4-5233-440b-94dd-f3a39223742e.png />
+<img width="1164" alt="image" src="https://user-images.githubusercontent.com/600419/164973289-966361a8-9a61-485e-8e31-2dad42a24ab7.png">
+
 
 <p >
     <a href="https://github.com/brunomikoski/UnitySmartSymbolicate/blob/master/LICENSE.md">
