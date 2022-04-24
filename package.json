@@ -1,0 +1,26 @@
+{
+  "name": "com.brunomikoski.unitysmartsymbolicate",
+  "displayName": "Smart Symbolicate",
+  "version": "1.0.0",
+  "unity": "2018.4",
+  "description": "A tool to help you symbolicate android crashes",
+  "keywords": [
+    "symbolicate",
+    "google play",
+    "mobile",
+    "crash",
+    "il2cpp"
+  ],
+  "category": "editor extensions",
+  "homepage": "https://github.com/brunomikoski/UnitySmartSymbolicate",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brunomikoski/UnitySmartSymbolicate.git"
+  },
+  "bugs": "https://github.com/brunomikoski/UnitySmartSymbolicate/issues",
+  "author": {
+    "name": "Bruno Mikoski",
+    "url": "https://www.brunomikoski.com"
+  },
+  "type": "module"
+}
