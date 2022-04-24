@@ -1,11 +1,14 @@
 # Unity Smart Symbolicate
 
+<img src=https://user-images.githubusercontent.com/600419/164972718-570c05f4-5233-440b-94dd-f3a39223742e.png />
+
 <p >
     <a href="https://github.com/brunomikoski/UnitySmartSymbolicate/blob/master/LICENSE.md">
 		<img alt="GitHub license" src ="https://img.shields.io/github/license/Thundernerd/Unity3D-PackageManagerModules" />
 	</a>
 
 </p> 
+
 <p >
     <a href="https://openupm.com/packages/com.brunomikoski.unitysmartsymbolicate/">
         <img src="https://img.shields.io/npm/v/com.brunomikoski.unitysmartsymbolicate?label=openupm&amp;registry_uri=https://package.openupm.com" />
