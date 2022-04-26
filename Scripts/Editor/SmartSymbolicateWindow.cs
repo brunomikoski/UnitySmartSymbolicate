@@ -16,11 +16,14 @@ namespace BrunoMikoski.SmartSymbolicate
         private const string UNITY_PATH_STORAGE_KEY = "SmartSymbolicate.UnityPathStorageKey";
         private const string PROJECT_SYMBOLS_PATH_STORAGE_KEY = "SmartSymbolicate.ProjectSymbolsStorageKey";
 
-        private const string LIB_IL2CPP_NAME = "libil2cpp.so";
-        private const string LIB_IL2CPP_DEBUG_NAME = "libil2cpp.dbg.so";
-        private const string LIB_IL2CPP_SYM_NAME = "libil2cpp.sym.so";
-        private const string LIB_UNITY_NAME = "libunity.sym.so";
+        
+        private const string LIB_IL2CPP_NAME = "libil2cpp";
+        private const string LIB_UNITY_NAME = "libunity";
 
+        private const string DEBUG_EXTENSION = "dbg.so";
+        private const string SYM_EXTENSION = "sym.so";
+        private const string DEFAULT_EXTENSION = "so";
+        
         private static string Addr2Line32Path 
         {
             get
@@ -64,32 +67,37 @@ namespace BrunoMikoski.SmartSymbolicate
 
         private class AddressesData
         {
-            private string libName;
-            public string LibName => libName;
+            private string[] libraryNames = Array.Empty<string>();
+            public string[] LibraryNames => libraryNames;
 
             private string memoryAddress;
             public string MemoryAddress => memoryAddress;
 
-            public AddressesData(string targetLib, string matchValue)
+            public AddressesData(string matchValue)
             {
-                libName = targetLib;
                 memoryAddress = matchValue;
             }
 
             public override string ToString()
             {
-                return $"[{libName}] :: {memoryAddress}";
+                return $"[{string.Join(",", libraryNames)}] :: {memoryAddress}";
             }
 
-            public string GetLibraryDisplayName()
+            public string GetLibraryDisplayName(int index)
             {
-                if (string.Equals(libName, "libunity", StringComparison.Ordinal))
+                
+                if (string.Equals(libraryNames[index], "libunity", StringComparison.Ordinal))
                     return "<color=yellow>Unity Engine Code </color>" ;
 
-                if (string.Equals(libName, "libil2cpp", StringComparison.Ordinal))
+                if (string.Equals(libraryNames[index], "libil2cpp", StringComparison.Ordinal))
                     return "<color=green>Project Code</color>";
 
-                return $"<color=red>{libName}</color>";
+                return $"<color=red>{libraryNames[index]}</color>";
+            }
+
+            public void SetLibs(params string[] targetLibs)
+            {
+                libraryNames = targetLibs;
             }
         }
         
@@ -109,6 +117,14 @@ namespace BrunoMikoski.SmartSymbolicate
         {
             arm64_v8a = 0,
             armeabi_v7a = 1
+        }
+        
+        private enum SymbolsType
+        {
+            Auto,
+            libil2cpp,
+            libunity,
+            All
         }
 
         private string unityHubPath
@@ -131,9 +147,11 @@ namespace BrunoMikoski.SmartSymbolicate
         private ReleaseType releaseType = ReleaseType.Release;
         private ScriptingBackendType scriptingBackendType = ScriptingBackendType.il2cpp;
         private CPUType cpuType = CPUType.arm64_v8a;
+        private SymbolsType symbolsType = SymbolsType.Auto;
 
         private string[] releaseTypeDisplayNames = Array.Empty<string>();
         private string[] scriptingBackendTypeNames = Array.Empty<string>();
+        private string[] symbolTypeNames = Array.Empty<string>();
         private string[] cpuTypeNames = Array.Empty<string>();
         private string[] availableUnityVersions = Array.Empty<string>();
         
@@ -168,6 +186,7 @@ namespace BrunoMikoski.SmartSymbolicate
             releaseTypeDisplayNames = Enum.GetNames(typeof(ReleaseType));
             scriptingBackendTypeNames = Enum.GetNames(typeof(ScriptingBackendType));
             cpuTypeNames = Enum.GetNames(typeof(CPUType));
+            symbolTypeNames = Enum.GetNames(typeof(SymbolsType));
 
             for (int i = 0; i < cpuTypeNames.Length; i++)
                 cpuTypeNames[i] = cpuTypeNames[i].Replace("_", "-");
@@ -200,6 +219,7 @@ namespace BrunoMikoski.SmartSymbolicate
             {
                 ParseInput();
             }
+            
             EditorGUI.EndDisabledGroup();
             
             EditorGUILayout.EndVertical();
@@ -230,41 +250,46 @@ namespace BrunoMikoski.SmartSymbolicate
 
                 EditorUtility.DisplayProgressBar("Processing Symbols", $"Processing {addressesData.MemoryAddress}", (float)i / addressesDatas.Count);
 
-                if (!TryGetLibPath(addressesData.LibName, out string knowPath))
+                for (int j = 0; j < addressesData.LibraryNames.Length; j++)
                 {
-                    parsedResults.AppendLine($"<color=red>Unknow lib named {addressesData.LibName} :: {addressesData.MemoryAddress}</color>");
-                    continue;
-                }
-
-                if (!File.Exists(knowPath))
-                {
-                    parsedResults.AppendLine($"<color=red>Failed to find lib {addressesData.LibName} at Path: {knowPath}</color>");
-                    continue;
-                }
-
-                if (printCommands)
-                {
-                    parsedResults.AppendLine($"<b>Executing Command:</b> {targetADDR2} -f -C -e \"{knowPath}\" {addressesData.MemoryAddress}");
-                }
-                
-                using (Process process = new Process())
-                {
-                    process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
-                    process.StartInfo.FileName = targetADDR2;
-                    process.StartInfo.Arguments = $"-f -C -e \"{knowPath}\" {addressesData.MemoryAddress}";
-                    process.StartInfo.UseShellExecute = false;
-                    process.StartInfo.CreateNoWindow = true;
-                    process.StartInfo.RedirectStandardOutput = true;
-                    process.StartInfo.RedirectStandardInput = true;
-                    process.StartInfo.RedirectStandardError = true;
-                    process.Start();
+                    string libraryName = addressesData.LibraryNames[j];
                     
-                    parsedResults.AppendLine($"<b>{addressesData.GetLibraryDisplayName()}</b> [<i>{addressesData.MemoryAddress}</i>] => {process.StandardOutput.ReadToEnd()}");
-                    string error = process.StandardError.ReadToEnd();
-                    if (!string.IsNullOrEmpty(error))
-                        parsedResults.AppendLine($"<color=red>[Error]</color> {addressesData} => {error}");
+                    if (!TryGetLibPath(libraryName, out string knowPath))
+                    {
+                        parsedResults.AppendLine($"<color=red>Unknow lib named {libraryName} :: {addressesData.MemoryAddress}</color>");
+                        continue;
+                    }
 
-                    process.WaitForExit();
+                    if (!File.Exists(knowPath))
+                    {
+                        parsedResults.AppendLine($"<color=red>Failed to find lib {libraryName} at Path: {knowPath}</color>");
+                        continue;
+                    }
+
+                    if (printCommands)
+                    {
+                        parsedResults.AppendLine($"<b>Executing Command:</b> {targetADDR2} -f -C -e \"{knowPath}\" {addressesData.MemoryAddress}");
+                    }
+                
+                    using (Process process = new Process())
+                    {
+                        process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                        process.StartInfo.FileName = targetADDR2;
+                        process.StartInfo.Arguments = $"-f -C -e \"{knowPath}\" {addressesData.MemoryAddress}";
+                        process.StartInfo.UseShellExecute = false;
+                        process.StartInfo.CreateNoWindow = true;
+                        process.StartInfo.RedirectStandardOutput = true;
+                        process.StartInfo.RedirectStandardInput = true;
+                        process.StartInfo.RedirectStandardError = true;
+                        process.Start();
+                    
+                        parsedResults.AppendLine($"<b>{addressesData.GetLibraryDisplayName(j)}</b> [<i>{addressesData.MemoryAddress}</i>] => {process.StandardOutput.ReadToEnd()}");
+                        string error = process.StandardError.ReadToEnd();
+                        if (!string.IsNullOrEmpty(error))
+                            parsedResults.AppendLine($"<color=red>[Error]</color> {addressesData} => {error}");
+
+                        process.WaitForExit();
+                    }
                 }
             }
 
@@ -274,7 +299,7 @@ namespace BrunoMikoski.SmartSymbolicate
         
         private bool TryGetLibPath(string targetLibName, out string libKnowPath)
         {
-            if (targetLibName.Equals("libunity", StringComparison.Ordinal))
+            if (targetLibName.Equals(LIB_UNITY_NAME, StringComparison.Ordinal))
             {
                 string targetPath = Path.Combine(unityHubPath, unityVersion);
                 targetPath = Path.Combine(targetPath, UnityVariationsPath);
@@ -283,36 +308,71 @@ namespace BrunoMikoski.SmartSymbolicate
                 targetPath = Path.Combine(targetPath, releaseTypeDisplayNames[(int)releaseType]);
                 targetPath = Path.Combine(targetPath, "Symbols");
                 targetPath = Path.Combine(targetPath, cpuTypeNames[(int)cpuType]);
-                targetPath = Path.Combine(targetPath, LIB_UNITY_NAME);
+                
+                
+                targetPath = Path.Combine(targetPath, $"{LIB_UNITY_NAME}.{SYM_EXTENSION}");
                 libKnowPath = targetPath;
                 return true;
             }
 
-            if (targetLibName.Equals("libil2cpp", StringComparison.Ordinal))
+            if (targetLibName.IndexOf(LIB_IL2CPP_NAME, StringComparison.Ordinal) > -1)
             {
                 string targetPath = projectSymbolsPath;
                 targetPath = Path.Combine(targetPath, cpuTypeNames[(int)cpuType]);
+
+                DirectoryInfo projectPathDirectory = new DirectoryInfo(targetPath);
                 
-                string debugTargetPath = Path.Combine(targetPath, LIB_IL2CPP_DEBUG_NAME);
-                if (File.Exists(debugTargetPath))
+                FileInfo[] il2cppFileInfo = projectPathDirectory.GetFiles($"{LIB_IL2CPP_NAME}*", SearchOption.AllDirectories);
+                SortedDictionary<string, FileInfo> prioritySymbols = new SortedDictionary<string, FileInfo>();
+                for (int i = 0; i < il2cppFileInfo.Length; i++)
                 {
-                    targetPath = debugTargetPath;
+                    FileInfo fileInfo = il2cppFileInfo[i];
+
+                    if (!prioritySymbols.ContainsKey(DEBUG_EXTENSION))
+                    {
+                        if (fileInfo.FullName.IndexOf(DEBUG_EXTENSION, StringComparison.OrdinalIgnoreCase) > -1)
+                        {
+                            prioritySymbols.Add(DEBUG_EXTENSION, fileInfo);
+                            continue;
+                        }
+                    }
+
+                    if (!prioritySymbols.ContainsKey(SYM_EXTENSION))
+                    {
+                        if (fileInfo.FullName.IndexOf(SYM_EXTENSION, StringComparison.OrdinalIgnoreCase) > -1)
+                        {
+                            prioritySymbols.Add(SYM_EXTENSION, fileInfo);
+                            continue;
+                        }
+                    }
+
+                    if (!prioritySymbols.ContainsKey(DEFAULT_EXTENSION))
+                    {
+                        if (fileInfo.FullName.IndexOf(DEFAULT_EXTENSION, StringComparison.OrdinalIgnoreCase) > -1)
+                        {
+                            prioritySymbols.Add(DEFAULT_EXTENSION, fileInfo);
+                        }
+                    }
                 }
-                else
+
+
+                if (prioritySymbols.TryGetValue(DEBUG_EXTENSION, out FileInfo resultFileInfo))
                 {
-                    string symTargetPath = Path.Combine(targetPath, LIB_IL2CPP_SYM_NAME);
-                    if (File.Exists(symTargetPath))
-                    {
-                        targetPath = symTargetPath;
-                    }
-                    else
-                    {
-                        targetPath = Path.Combine(targetPath, LIB_IL2CPP_NAME);
-                    }
+                    libKnowPath = resultFileInfo.FullName;
+                    return true;
                 }
-                
-                libKnowPath = targetPath;
-                return true;
+
+                if (prioritySymbols.TryGetValue(SYM_EXTENSION, out resultFileInfo))
+                {
+                    libKnowPath = resultFileInfo.FullName;
+                    return true;
+                }
+
+                if (prioritySymbols.TryGetValue(DEFAULT_EXTENSION, out resultFileInfo))
+                {
+                    libKnowPath = resultFileInfo.FullName;
+                    return true;
+                }
             }
 
             libKnowPath = string.Empty;
@@ -341,20 +401,33 @@ namespace BrunoMikoski.SmartSymbolicate
                 if (!match.Success)
                     continue;
 
-                int libStartIndex = line.IndexOf(@"at ", StringComparison.Ordinal);
-                if (libStartIndex == -1)
-                    continue;
-
-                int libEndIndex = line.IndexOf(@".0x", StringComparison.Ordinal);
-                if (libEndIndex == -1)
-                    continue;
-
-                int startIndex = libStartIndex + 3;
-                string targetLib = line.Substring(startIndex, libEndIndex - startIndex);
-
-                AddressesData addressesData = new AddressesData(targetLib, match.Value);
+                AddressesData addressesData = new AddressesData(match.Value);
+                if (symbolsType == SymbolsType.Auto)
+                {
+                    Match libMatch = Regex.Match(line, @"(?<=at )(.*)(?=\.)");
+                    if (libMatch.Success)
+                        addressesData.SetLibs(libMatch.Value);
+                }
+                else if (symbolsType == SymbolsType.libunity)
+                {
+                    addressesData.SetLibs(Path.GetFileNameWithoutExtension(LIB_UNITY_NAME));
+                }
+                else if (symbolsType == SymbolsType.libil2cpp)
+                {
+                    addressesData.SetLibs(Path.GetFileNameWithoutExtension(LIB_IL2CPP_NAME));
+                }
+                else if (symbolsType == SymbolsType.All)
+                {
+                    addressesData.SetLibs(GetAllLibraries());
+                }
+                
                 addressesDatas.Add(addressesData);
             }
+        }
+
+        private string[] GetAllLibraries()
+        {
+            return new[] { Path.GetFileNameWithoutExtension(LIB_UNITY_NAME), Path.GetFileNameWithoutExtension(LIB_IL2CPP_NAME) };
         }
 
         private void DrawSettings()
@@ -414,6 +487,11 @@ namespace BrunoMikoski.SmartSymbolicate
             }
             EditorGUILayout.EndVertical();
             
+            
+            EditorGUILayout.BeginVertical("HelpBox", GUILayout.Width(100));
+            EditorGUILayout.LabelField("Symbols", EditorStyles.boldLabel);
+            symbolsType = (SymbolsType)GUILayout.SelectionGrid((int)symbolsType, symbolTypeNames, 2, EditorStyles.radioButton); 
+            EditorGUILayout.EndVertical();
             
             EditorGUILayout.EndHorizontal();
 

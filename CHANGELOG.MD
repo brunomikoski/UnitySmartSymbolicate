@@ -5,10 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
-- IOS symbolicate
-- 
+
+## [1.0.1]
+- Added a symbol selection option
+
 ## [1.0.0]
 ### Add
 - Initial implementation of the Smart Symbolicate
 
+[1.0.1]: https://github.com/brunomikoski/UnitySmartSymbolicate/releases/tag/v1.0.1
 [1.0.0]: https://github.com/brunomikoski/UnitySmartSymbolicate/releases/tag/v1.0.0
