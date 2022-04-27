@@ -168,7 +168,7 @@ namespace BrunoMikoski.SmartSymbolicate
 
        
 
-        [MenuItem("Tools/Open SmartSymbolicate")]
+        [MenuItem("Window/Analysis/Smart Symbolicate", false, 1000)]
         public static void ShowExample()
         {
             SmartSymbolicateWindow wnd = GetWindow<SmartSymbolicateWindow>();

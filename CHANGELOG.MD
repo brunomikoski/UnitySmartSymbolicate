@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [1.02]
+### Changed
+- Moved the Menu to `Window/Analysis/Smart Symbolicate`
+
 ## [1.0.1]
 ### Add
 - Added a symbol selection option
@@ -14,5 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Add
 - Initial implementation of the Smart Symbolicate
 
+[1.0.2]: https://github.com/brunomikoski/UnitySmartSymbolicate/releases/tag/v1.0.2
 [1.0.1]: https://github.com/brunomikoski/UnitySmartSymbolicate/releases/tag/v1.0.1
 [1.0.0]: https://github.com/brunomikoski/UnitySmartSymbolicate/releases/tag/v1.0.0
