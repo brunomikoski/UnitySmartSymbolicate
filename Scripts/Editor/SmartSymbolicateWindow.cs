@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
@@ -22,7 +23,8 @@ namespace BrunoMikoski.SmartSymbolicate
         private const string DEBUG_EXTENSION = "dbg.so";
         private const string SYM_EXTENSION = "sym.so";
         private const string DEFAULT_EXTENSION = "so";
-        
+        internal const string SMART_SYMBOLICATE_TITLE_WINDOW = "Smart Symbolicate";
+
         private static string Addr2Line32Path 
         {
             get
@@ -172,13 +174,19 @@ namespace BrunoMikoski.SmartSymbolicate
         public static void ShowExample()
         {
             SmartSymbolicateWindow wnd = GetWindow<SmartSymbolicateWindow>();
-            wnd.titleContent = new GUIContent("Smart Symbolicate");
+            wnd.titleContent = new GUIContent(SMART_SYMBOLICATE_TITLE_WINDOW);
         }
 
         private void OnEnable()
         {
             GenerateDisplayNames();
             ValidateUnityHubPath(unityHubPath);
+            HyperlinkInterceptor.Enable();
+        }
+
+        private void OnDisable()
+        {
+            HyperlinkInterceptor.Disable();
         }
 
         private void GenerateDisplayNames()
@@ -210,7 +218,7 @@ namespace BrunoMikoski.SmartSymbolicate
             EditorGUILayout.Separator();
 
             outputScrollView = EditorGUILayout.BeginScrollView(outputScrollView, false, true, GUILayout.ExpandHeight(true));
-            output = EditorGUILayout.TextArea(output, outputTextFieldStyle, GUILayout.ExpandHeight(true),
+            EditorGUILayout.SelectableLabel(output, outputTextFieldStyle, GUILayout.ExpandHeight(true),
                 GUILayout.ExpandWidth(true));
             EditorGUILayout.EndScrollView();
 
@@ -284,8 +292,15 @@ namespace BrunoMikoski.SmartSymbolicate
                         process.StartInfo.RedirectStandardError = true;
                         process.Start();
 
-                        string output = process.StandardOutput.ReadToEnd().Replace("??:?", string.Empty);
-                        parsedResults.AppendLine($"<b>{addressesData.GetLibraryDisplayName(j)}</b> [<i>{addressesData.MemoryAddress}</i>] => {output}");
+                        string processOutput = process.StandardOutput.ReadToEnd().Replace("??:?", string.Empty);
+
+                        if (libraryName.IndexOf(LIB_IL2CPP_NAME, StringComparison.Ordinal) > -1)
+                        {
+                            TryGenerateCodeHyperlinkForOutput(ref processOutput);
+                        }
+                        
+                        parsedResults.AppendLine($"<b>{addressesData.GetLibraryDisplayName(j)}</b> [<i>{addressesData.MemoryAddress}</i>] => {processOutput}");
+
                         string error = process.StandardError.ReadToEnd();
                         if (!string.IsNullOrEmpty(error))
                             parsedResults.AppendLine($"<color=red>[Error]</color> {addressesData} => {error}");
@@ -296,9 +311,77 @@ namespace BrunoMikoski.SmartSymbolicate
             }
 
             output = Regex.Replace(parsedResults.ToString(), @"^\s+$[\r\n]*", string.Empty, RegexOptions.Multiline);
+
             EditorUtility.ClearProgressBar();
         }
-        
+
+        private void TryGenerateCodeHyperlinkForOutput(ref string outputLine)
+        {
+            try
+            {
+                
+                if (string.IsNullOrEmpty(outputLine))
+                    return;
+
+                string[] splitResults = outputLine.Split(new[] { "_" }, StringSplitOptions.RemoveEmptyEntries);
+                if (splitResults.Length < 2)
+                    return;
+
+                string className = splitResults[0];
+                string methodName = splitResults[1];
+
+                string[] classGUIDs = AssetDatabase.FindAssets($"{className} t:TextAsset");
+                if (classGUIDs.Length != 1)
+                    return;
+
+                string classPath = AssetDatabase.GUIDToAssetPath(classGUIDs[0]);
+                string fileClassName = Path.GetFileNameWithoutExtension(classPath);
+
+                if (!string.Equals(fileClassName, className, StringComparison.Ordinal))
+                    return;
+                
+                // string methodDeclarationString = $" {methodName}";
+
+                string[] lines = File.ReadAllLines(Path.GetFullPath(classPath));
+
+                int hitCounts = 0;
+                int targetLine = -1;
+
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string line = lines[i];
+                    
+                    if (line.IndexOf(methodName, StringComparison.Ordinal) == -1) 
+                        continue;
+                    
+                    //If is assigning the value somewhere, probably its not the method declaration
+                    if (line.IndexOf("=", StringComparison.OrdinalIgnoreCase) > -1)
+                        continue;
+
+                    //If has less than 1 space, probably is a method invocation
+                    if (line.Split(' ').Length < 1)
+                        continue;
+
+                    //Ignore .
+                    if (line.IndexOf(".", StringComparison.OrdinalIgnoreCase) > -1)
+                        continue;
+                    
+                    hitCounts++;
+                    targetLine = i + 1;
+                }
+
+                outputLine = outputLine.Replace("\n", string.Empty);
+                if (hitCounts == 1)
+                    outputLine = $"{outputLine} (at <a href=\"{classPath}\" line=\"{targetLine}\">{classPath}:{targetLine}</a> <i> This is a guess :) </i>) ";
+                else
+                    outputLine = $"{outputLine} (at <a href=\"{classPath}\" line=\"{0}\">{classPath}</a> <i> This is a guess :) </i>) ";
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+        }
+
         private bool TryGetLibPath(string targetLibName, out string libKnowPath)
         {
             string targetProjectSymbolsPath = projectSymbolsPath;
