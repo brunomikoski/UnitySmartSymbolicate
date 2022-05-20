@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
@@ -74,11 +73,11 @@ namespace BrunoMikoski.SmartSymbolicate
             private string memoryAddress;
             public string MemoryAddress => memoryAddress;
 
-            public AddressesData(string matchValue)
+
+            public AddressesData(string matchValue, string line)
             {
                 memoryAddress = matchValue;
             }
-
             public override string ToString()
             {
                 return $"[{string.Join(",", libraryNames)}] :: {memoryAddress}";
@@ -168,8 +167,6 @@ namespace BrunoMikoski.SmartSymbolicate
 
         private static HashSet<string> unknowLibs = new HashSet<string>();
 
-
-
         [MenuItem("Window/Analysis/Smart Symbolicate", false, 1000)]
         public static void ShowExample()
         {
@@ -218,7 +215,7 @@ namespace BrunoMikoski.SmartSymbolicate
             EditorGUILayout.Separator();
 
             outputScrollView = EditorGUILayout.BeginScrollView(outputScrollView, false, true, GUILayout.ExpandHeight(true));
-            EditorGUILayout.SelectableLabel(output, outputTextFieldStyle, GUILayout.ExpandHeight(true),
+            EditorGUILayout.TextArea(output, outputTextFieldStyle, GUILayout.ExpandHeight(true),
                 GUILayout.ExpandWidth(true));
             EditorGUILayout.EndScrollView();
 
@@ -236,12 +233,6 @@ namespace BrunoMikoski.SmartSymbolicate
         private void ParseInput()
         {
             unknowLibs.Clear();
-            GatherDataFromInput();
-            if (addressesDatas.Count == 0)
-            {
-                Debug.LogError("Failed to find any useful memory address on input");
-                return;
-            }
             
             string targetADDR2 = GetTargetAddr2line();
             if (!File.Exists(targetADDR2))
@@ -252,74 +243,159 @@ namespace BrunoMikoski.SmartSymbolicate
 
             StringBuilder parsedResults = new StringBuilder();
 
-            EditorUtility.DisplayProgressBar("Processing Symbols", "Start", 0);
-            for (int i = 0; i < addressesDatas.Count; i++)
+            Regex addressesRegex = new Regex("0[xX][0-9a-fA-F]+");
+
+            string[] lines = crashInput.Split(new[] { "\n" }, StringSplitOptions.RemoveEmptyEntries);
+            
+            for (int i = 0; i < lines.Length; i++)
             {
-                AddressesData addressesData = addressesDatas[i];
+                string line = lines[i];
 
-                EditorUtility.DisplayProgressBar("Processing Symbols", $"Processing {addressesData.MemoryAddress}", (float)i / addressesDatas.Count);
-
-                for (int j = 0; j < addressesData.LibraryNames.Length; j++)
+                Match memoryAddress = addressesRegex.Match(line);
+                if (!memoryAddress.Success)
                 {
-                    string libraryName = addressesData.LibraryNames[j];
-                    
-                    if (!TryGetLibPath(libraryName, out string knowPath))
-                    {
-                        parsedResults.AppendLine($"<color=red>Unknow lib named {libraryName} :: {addressesData.MemoryAddress}</color>");
+                    Regex removeEmptyLines = new Regex(@"\s+");
+                    if (removeEmptyLines.Replace(line, "").Length < 3)
                         continue;
-                    }
 
-                    if (!File.Exists(knowPath))
-                    {
-                        parsedResults.AppendLine($"<color=red>Failed to find lib {libraryName} at Path: {knowPath}</color>");
-                        continue;
-                    }
-
-                    if (printCommands)
-                    {
-                        parsedResults.AppendLine($"<b>Executing Command:</b> {targetADDR2} -f -C -e \"{knowPath}\" {addressesData.MemoryAddress}");
-                    }
+                    parsedResults.AppendLine(line);
+                    continue;
+                }
                 
-                    using (Process process = new Process())
+                string targetLib = string.Empty;
+                if (symbolsType == SymbolsType.Auto)
+                {
+                    Match libMatch = Regex.Match(line, @"(?<=at )(.*)(?=\.)");
+                    if (libMatch.Success)
                     {
-                        process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
-                        process.StartInfo.FileName = targetADDR2;
-                        process.StartInfo.Arguments = $"-f -C -e \"{knowPath}\" {addressesData.MemoryAddress}";
-                        process.StartInfo.UseShellExecute = false;
-                        process.StartInfo.CreateNoWindow = true;
-                        process.StartInfo.RedirectStandardOutput = true;
-                        process.StartInfo.RedirectStandardInput = true;
-                        process.StartInfo.RedirectStandardError = true;
-                        process.Start();
-
-                        string processOutput = process.StandardOutput.ReadToEnd().Replace("??:?", string.Empty);
-
-                        if (libraryName.IndexOf(LIB_IL2CPP_NAME, StringComparison.Ordinal) > -1)
-                        {
-                            TryGenerateCodeHyperlinkForOutput(ref processOutput);
-                        }
-                        
-                        parsedResults.AppendLine($"<b>{addressesData.GetLibraryDisplayName(j)}</b> [<i>{addressesData.MemoryAddress}</i>] => {processOutput}");
-
-                        string error = process.StandardError.ReadToEnd();
-                        if (!string.IsNullOrEmpty(error))
-                            parsedResults.AppendLine($"<color=red>[Error]</color> {addressesData} => {error}");
-
-                        process.WaitForExit();
+                        targetLib = libMatch.Value;
                     }
+                    else
+                    {
+                        parsedResults.AppendLine(line);
+                        continue;
+                    }
+                }
+                else if (symbolsType == SymbolsType.libunity)
+                {
+                    targetLib = Path.GetFileNameWithoutExtension(LIB_UNITY_NAME);
+                }
+                else if (symbolsType == SymbolsType.libil2cpp)
+                {
+                    targetLib = Path.GetFileNameWithoutExtension(LIB_IL2CPP_NAME);
+                }
+                
+                if (!TryGetLibPath(targetLib, out string knowPath))
+                {
+                    parsedResults.AppendLine($"<color=red>Unknow lib named {targetLib} :: {memoryAddress.Value}</color>");
+                    continue;
+                }
+
+                if (!File.Exists(knowPath))
+                {
+                    parsedResults.AppendLine($"<color=red>Failed to find lib {targetLib} at Path: {knowPath}</color>");
+                    continue;
+                }
+
+                if (printCommands)
+                {
+                    parsedResults.AppendLine($"<b>Executing Command:</b> {targetADDR2} -f -C -e \"{knowPath}\" {memoryAddress.Value}");
+                }
+                
+                EditorUtility.DisplayProgressBar("Processing Symbols", $"Processing {memoryAddress.Value} against {targetLib}", (float)i / lines.Length);
+
+                using (Process process = new Process())
+                {
+                    process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                    process.StartInfo.FileName = targetADDR2;
+                    process.StartInfo.Arguments = $"-f -C -e \"{knowPath}\" {memoryAddress.Value}";
+                    process.StartInfo.UseShellExecute = false;
+                    process.StartInfo.CreateNoWindow = true;
+                    process.StartInfo.RedirectStandardOutput = true;
+                    process.StartInfo.RedirectStandardInput = true;
+                    process.StartInfo.RedirectStandardError = true;
+                    process.Start();
+
+                    string processOutput = process.StandardOutput.ReadToEnd().Replace("??:?", string.Empty);
+
+                    if (targetLib.IndexOf(LIB_IL2CPP_NAME, StringComparison.Ordinal) > -1)
+                    {
+                        TryGenerateCodeHyperlinkForOutput(ref processOutput);
+                    }
+                        
+                    parsedResults.AppendLine($"<b>{GetLibraryDisplayColor(targetLib)}</b> [<i>{memoryAddress.Value}</i>] => {processOutput}");
+
+                    string error = process.StandardError.ReadToEnd();
+                    if (!string.IsNullOrEmpty(error))
+                        parsedResults.AppendLine($"<color=red>[Error]</color> {memoryAddress.Value} => {error}");
+
+                    process.WaitForExit();
                 }
             }
 
             output = Regex.Replace(parsedResults.ToString(), @"^\s+$[\r\n]*", string.Empty, RegexOptions.Multiline);
 
             EditorUtility.ClearProgressBar();
+
+            // GatherDataFromInput();
+            // if (addressesDatas.Count == 0)
+            // {
+            //     Debug.LogError("Failed to find any useful memory address on input");
+            //     return;
+            // }
+            //
+            //
+            //
+            //
+            // EditorUtility.DisplayProgressBar("Processing Symbols", "Start", 0);
+            // for (int i = 0; i < addressesDatas.Count; i++)
+            // {
+            //     AddressesData addressesData = addressesDatas[i];
+            //
+            //
+            //     for (int j = 0; j < addressesData.LibraryNames.Length; j++)
+            //     {
+            //         string libraryName = addressesData.LibraryNames[j];
+            //         
+            //         if (!TryGetLibPath(libraryName, out string knowPath))
+            //         {
+            //             parsedResults.AppendLine($"<color=red>Unknow lib named {libraryName} :: {addressesData.MemoryAddress}</color>");
+            //             continue;
+            //         }
+            //
+            //         if (!File.Exists(knowPath))
+            //         {
+            //             parsedResults.AppendLine($"<color=red>Failed to find lib {libraryName} at Path: {knowPath}</color>");
+            //             continue;
+            //         }
+            //
+            //         if (printCommands)
+            //         {
+            //             parsedResults.AppendLine($"<b>Executing Command:</b> {targetADDR2} -f -C -e \"{knowPath}\" {addressesData.MemoryAddress}");
+            //         }
+            //     
+            //         
+            //     }
+            // }   
+
+            
+        }
+
+        private string GetLibraryDisplayColor(string targetLib)
+        {
+            if (string.Equals(targetLib, "libunity", StringComparison.Ordinal))
+                return "<color=yellow>Unity Engine Code </color>";
+
+            if (unknowLibs.Contains(targetLib))
+                return "<color=red>Project Code</color>";
+
+            return $"<color=green>{targetLib}</color>";
         }
 
         private void TryGenerateCodeHyperlinkForOutput(ref string outputLine)
         {
             try
             {
-                
                 if (string.IsNullOrEmpty(outputLine))
                     return;
 
@@ -340,8 +416,6 @@ namespace BrunoMikoski.SmartSymbolicate
                 if (!string.Equals(fileClassName, className, StringComparison.Ordinal))
                     return;
                 
-                // string methodDeclarationString = $" {methodName}";
-
                 string[] lines = File.ReadAllLines(Path.GetFullPath(classPath));
 
                 int hitCounts = 0;
@@ -474,18 +548,19 @@ namespace BrunoMikoski.SmartSymbolicate
         private void GatherDataFromInput()
         {
             addressesDatas = new List<AddressesData>();
-            Regex addressesRegex = new Regex("0[xX][0-9a-fA-F]+");
 
             string[] lines = crashInput.Split(new[] { "\n" }, StringSplitOptions.RemoveEmptyEntries);
             for (int i = 0; i < lines.Length; i++)
             {
                 string line = lines[i];
 
+                Regex addressesRegex = new Regex("0[xX][0-9a-fA-F]+");
                 Match match = addressesRegex.Match(line);
                 if (!match.Success)
                     continue;
 
-                AddressesData addressesData = new AddressesData(match.Value);
+                AddressesData addressesData = new AddressesData(match.Value, line);
+
                 if (symbolsType == SymbolsType.Auto)
                 {
                     Match libMatch = Regex.Match(line, @"(?<=at )(.*)(?=\.)");
