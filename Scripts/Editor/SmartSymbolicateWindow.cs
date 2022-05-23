@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
@@ -14,7 +15,6 @@ namespace BrunoMikoski.SmartSymbolicate
     {
         private const string UNITY_PATH_STORAGE_KEY = "SmartSymbolicate.UnityPathStorageKey";
         private const string PROJECT_SYMBOLS_PATH_STORAGE_KEY = "SmartSymbolicate.ProjectSymbolsStorageKey";
-
         
         private const string LIB_IL2CPP_NAME = "libil2cpp";
         private const string LIB_UNITY_NAME = "libunity";
@@ -22,7 +22,7 @@ namespace BrunoMikoski.SmartSymbolicate
         private const string DEBUG_EXTENSION = "dbg.so";
         private const string SYM_EXTENSION = "sym.so";
         private const string DEFAULT_EXTENSION = "so";
-        internal const string SMART_SYMBOLICATE_TITLE_WINDOW = "Smart Symbolicate";
+        private const string SMART_SYMBOLICATE_TITLE_WINDOW = "Smart Symbolicate";
 
         private static string Addr2Line32Path 
         {
@@ -63,43 +63,8 @@ namespace BrunoMikoski.SmartSymbolicate
                 return @"PlaybackEngines/AndroidPlayer/Variations";
             }
         }
-        
-
-        private class AddressesData
-        {
-            private string[] libraryNames = Array.Empty<string>();
-            public string[] LibraryNames => libraryNames;
-
-            private string memoryAddress;
-            public string MemoryAddress => memoryAddress;
 
 
-            public AddressesData(string matchValue, string line)
-            {
-                memoryAddress = matchValue;
-            }
-            public override string ToString()
-            {
-                return $"[{string.Join(",", libraryNames)}] :: {memoryAddress}";
-            }
-
-            public string GetLibraryDisplayName(int index)
-            {
-                if (string.Equals(libraryNames[index], "libunity", StringComparison.Ordinal))
-                    return "<color=yellow>Unity Engine Code </color>";
-
-                if (unknowLibs.Contains(libraryNames[index]))
-                    return "<color=red>Project Code</color>";
-
-                return $"<color=green>{libraryNames[index]}</color>";
-            }
-
-            public void SetLibs(params string[] targetLibs)
-            {
-                libraryNames = targetLibs;
-            }
-        }
-        
         private enum ReleaseType
         {
             Release = 0,
@@ -122,8 +87,7 @@ namespace BrunoMikoski.SmartSymbolicate
         {
             Auto,
             libil2cpp,
-            libunity,
-            All
+            libunity
         }
 
         private string unityHubPath
@@ -141,7 +105,6 @@ namespace BrunoMikoski.SmartSymbolicate
         private string crashInput;
         private string unityVersion;
         private string output;
-        private List<AddressesData> addressesDatas;
 
         private ReleaseType releaseType = ReleaseType.Release;
         private ScriptingBackendType scriptingBackendType = ScriptingBackendType.il2cpp;
@@ -242,16 +205,13 @@ namespace BrunoMikoski.SmartSymbolicate
             }
 
             StringBuilder parsedResults = new StringBuilder();
-
-            Regex addressesRegex = new Regex("0[xX][0-9a-fA-F]+");
-
             string[] lines = crashInput.Split(new[] { "\n" }, StringSplitOptions.RemoveEmptyEntries);
             
             for (int i = 0; i < lines.Length; i++)
             {
                 string line = lines[i];
 
-                Match memoryAddress = addressesRegex.Match(line);
+                Match memoryAddress = Regex.Match(line, @"0[xX][0-9a-fA-F]+");
                 if (!memoryAddress.Success)
                 {
                     Regex removeEmptyLines = new Regex(@"\s+");
@@ -266,15 +226,10 @@ namespace BrunoMikoski.SmartSymbolicate
                 if (symbolsType == SymbolsType.Auto)
                 {
                     Match libMatch = Regex.Match(line, @"(?<=at )(.*)(?=\.)");
-                    if (libMatch.Success)
-                    {
-                        targetLib = libMatch.Value;
-                    }
-                    else
-                    {
-                        parsedResults.AppendLine(line);
+                    if (!libMatch.Success)
                         continue;
-                    }
+                    
+                    targetLib = libMatch.Value;
                 }
                 else if (symbolsType == SymbolsType.libunity)
                 {
@@ -284,10 +239,11 @@ namespace BrunoMikoski.SmartSymbolicate
                 {
                     targetLib = Path.GetFileNameWithoutExtension(LIB_IL2CPP_NAME);
                 }
-                
+
+                string memoryAddressValue = memoryAddress.Value;
                 if (!TryGetLibPath(targetLib, out string knowPath))
                 {
-                    parsedResults.AppendLine($"<color=red>Unknow lib named {targetLib} :: {memoryAddress.Value}</color>");
+                    parsedResults.AppendLine($"<color=red>Unknow lib named {targetLib} :: {memoryAddressValue}</color>");
                     continue;
                 }
 
@@ -299,16 +255,16 @@ namespace BrunoMikoski.SmartSymbolicate
 
                 if (printCommands)
                 {
-                    parsedResults.AppendLine($"<b>Executing Command:</b> {targetADDR2} -f -C -e \"{knowPath}\" {memoryAddress.Value}");
+                    parsedResults.AppendLine($"<b>Executing Command:</b> {targetADDR2} -f -C -e \"{knowPath}\" {memoryAddressValue}");
                 }
                 
-                EditorUtility.DisplayProgressBar("Processing Symbols", $"Processing {memoryAddress.Value} against {targetLib}", (float)i / lines.Length);
+                EditorUtility.DisplayProgressBar("Processing Symbols", $"Processing {memoryAddressValue} against {targetLib}", (float)i / lines.Length);
 
                 using (Process process = new Process())
                 {
                     process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
                     process.StartInfo.FileName = targetADDR2;
-                    process.StartInfo.Arguments = $"-f -C -e \"{knowPath}\" {memoryAddress.Value}";
+                    process.StartInfo.Arguments = $"-f -C -e \"{knowPath}\" {memoryAddressValue}";
                     process.StartInfo.UseShellExecute = false;
                     process.StartInfo.CreateNoWindow = true;
                     process.StartInfo.RedirectStandardOutput = true;
@@ -323,11 +279,11 @@ namespace BrunoMikoski.SmartSymbolicate
                         TryGenerateCodeHyperlinkForOutput(ref processOutput);
                     }
                         
-                    parsedResults.AppendLine($"<b>{GetLibraryDisplayColor(targetLib)}</b> [<i>{memoryAddress.Value}</i>] => {processOutput}");
+                    parsedResults.AppendLine($" at <b>{GetLibraryDisplay(targetLib)}.{memoryAddressValue}</b> => {processOutput}");
 
                     string error = process.StandardError.ReadToEnd();
                     if (!string.IsNullOrEmpty(error))
-                        parsedResults.AppendLine($"<color=red>[Error]</color> {memoryAddress.Value} => {error}");
+                        parsedResults.AppendLine($"<color=red>[Error]</color> {memoryAddressValue} => {error}");
 
                     process.WaitForExit();
                 }
@@ -336,60 +292,17 @@ namespace BrunoMikoski.SmartSymbolicate
             output = Regex.Replace(parsedResults.ToString(), @"^\s+$[\r\n]*", string.Empty, RegexOptions.Multiline);
 
             EditorUtility.ClearProgressBar();
-
-            // GatherDataFromInput();
-            // if (addressesDatas.Count == 0)
-            // {
-            //     Debug.LogError("Failed to find any useful memory address on input");
-            //     return;
-            // }
-            //
-            //
-            //
-            //
-            // EditorUtility.DisplayProgressBar("Processing Symbols", "Start", 0);
-            // for (int i = 0; i < addressesDatas.Count; i++)
-            // {
-            //     AddressesData addressesData = addressesDatas[i];
-            //
-            //
-            //     for (int j = 0; j < addressesData.LibraryNames.Length; j++)
-            //     {
-            //         string libraryName = addressesData.LibraryNames[j];
-            //         
-            //         if (!TryGetLibPath(libraryName, out string knowPath))
-            //         {
-            //             parsedResults.AppendLine($"<color=red>Unknow lib named {libraryName} :: {addressesData.MemoryAddress}</color>");
-            //             continue;
-            //         }
-            //
-            //         if (!File.Exists(knowPath))
-            //         {
-            //             parsedResults.AppendLine($"<color=red>Failed to find lib {libraryName} at Path: {knowPath}</color>");
-            //             continue;
-            //         }
-            //
-            //         if (printCommands)
-            //         {
-            //             parsedResults.AppendLine($"<b>Executing Command:</b> {targetADDR2} -f -C -e \"{knowPath}\" {addressesData.MemoryAddress}");
-            //         }
-            //     
-            //         
-            //     }
-            // }   
-
-            
         }
 
-        private string GetLibraryDisplayColor(string targetLib)
+        private string GetLibraryDisplay(string targetLib)
         {
+            string color = "green";
             if (string.Equals(targetLib, "libunity", StringComparison.Ordinal))
-                return "<color=yellow>Unity Engine Code </color>";
-
+                color = "yellow";
             if (unknowLibs.Contains(targetLib))
-                return "<color=red>Project Code</color>";
+                color = "red";
 
-            return $"<color=green>{targetLib}</color>";
+            return $"<color={color}>{targetLib}</color>";
         }
 
         private void TryGenerateCodeHyperlinkForOutput(ref string outputLine)
@@ -407,13 +320,23 @@ namespace BrunoMikoski.SmartSymbolicate
                 string methodName = splitResults[1];
 
                 string[] classGUIDs = AssetDatabase.FindAssets($"{className} t:TextAsset");
-                if (classGUIDs.Length != 1)
+                if (classGUIDs.Length == 0)
                     return;
 
-                string classPath = AssetDatabase.GUIDToAssetPath(classGUIDs[0]);
-                string fileClassName = Path.GetFileNameWithoutExtension(classPath);
+                string classPath = string.Empty;
+                
+                for (int i = 0; i < classGUIDs.Length; i++)
+                {
+                    string possibleClass = AssetDatabase.GUIDToAssetPath(classGUIDs[i]);
+                    string possibleClassName = Path.GetFileNameWithoutExtension(possibleClass);
+                    if (string.Equals(possibleClassName, className, StringComparison.Ordinal))
+                    {
+                        classPath = possibleClass;
+                        break;
+                    }
+                }
 
-                if (!string.Equals(fileClassName, className, StringComparison.Ordinal))
+                if (string.IsNullOrEmpty(classPath))
                     return;
                 
                 string[] lines = File.ReadAllLines(Path.GetFullPath(classPath));
@@ -444,6 +367,9 @@ namespace BrunoMikoski.SmartSymbolicate
                     targetLine = i + 1;
                 }
 
+                if (hitCounts <= 0)
+                    return;
+                
                 outputLine = outputLine.Replace("\n", string.Empty);
                 if (hitCounts == 1)
                     outputLine = $"{outputLine} (at <a href=\"{classPath}\" line=\"{targetLine}\">{classPath}:{targetLine}</a> <i> This is a guess :) </i>) ";
@@ -543,50 +469,6 @@ namespace BrunoMikoski.SmartSymbolicate
                 return Path.Combine(Path.Combine(unityHubPath, unityVersion), Addr2Line64Path);
 
             return Path.Combine(Path.Combine(unityHubPath, unityVersion), Addr2Line32Path);
-        }
-
-        private void GatherDataFromInput()
-        {
-            addressesDatas = new List<AddressesData>();
-
-            string[] lines = crashInput.Split(new[] { "\n" }, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < lines.Length; i++)
-            {
-                string line = lines[i];
-
-                Regex addressesRegex = new Regex("0[xX][0-9a-fA-F]+");
-                Match match = addressesRegex.Match(line);
-                if (!match.Success)
-                    continue;
-
-                AddressesData addressesData = new AddressesData(match.Value, line);
-
-                if (symbolsType == SymbolsType.Auto)
-                {
-                    Match libMatch = Regex.Match(line, @"(?<=at )(.*)(?=\.)");
-                    if (libMatch.Success)
-                        addressesData.SetLibs(libMatch.Value);
-                }
-                else if (symbolsType == SymbolsType.libunity)
-                {
-                    addressesData.SetLibs(Path.GetFileNameWithoutExtension(LIB_UNITY_NAME));
-                }
-                else if (symbolsType == SymbolsType.libil2cpp)
-                {
-                    addressesData.SetLibs(Path.GetFileNameWithoutExtension(LIB_IL2CPP_NAME));
-                }
-                else if (symbolsType == SymbolsType.All)
-                {
-                    addressesData.SetLibs(GetAllLibraries());
-                }
-                
-                addressesDatas.Add(addressesData);
-            }
-        }
-
-        private string[] GetAllLibraries()
-        {
-            return new[] { Path.GetFileNameWithoutExtension(LIB_UNITY_NAME), Path.GetFileNameWithoutExtension(LIB_IL2CPP_NAME) };
         }
 
         private void DrawSettings()

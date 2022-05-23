@@ -1,7 +1,7 @@
 {
   "name": "com.brunomikoski.unitysmartsymbolicate",
   "displayName": "Smart Symbolicate",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "unity": "2018.4",
   "description": "A tool to help you symbolicate android crashes",
   "keywords": [
