@@ -24,23 +24,67 @@ namespace BrunoMikoski.SmartSymbolicate
         private const string DEFAULT_EXTENSION = "so";
         private const string SMART_SYMBOLICATE_TITLE_WINDOW = "Smart Symbolicate";
 
-        private static string Addr2Line32Path 
+        private string Addr2Line32Path 
         {
             get
             {
-                if (Application.platform == RuntimePlatform.WindowsEditor)
-                    return @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-addr2line.exe";
-                return @"PlaybackEngines/AndroidPlayer/NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/darwin-x86_64/bin/arm-linux-androideabi-addr2line";
+                if (NDKVersion >= new Version(23, 1))
+                {
+                    if (Application.platform == RuntimePlatform.WindowsEditor)
+                        return @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-addr2line.exe";
+                    return @"PlaybackEngines/AndroidPlayer/NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-addr2line";
+                }
+                else
+                {
+                    if (Application.platform == RuntimePlatform.WindowsEditor)
+                        return @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\arm-linux-androideabi-addr2line.exe";
+                    return @"PlaybackEngines/AndroidPlayer/NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/darwin-x86_64/bin/arm-linux-androideabi-addr2line";
+                }
             }
         }
 
-        private static string Addr2Line64Path 
+        private string Addr2Line64Path 
         {
             get
             {
-                if (Application.platform == RuntimePlatform.WindowsEditor)
-                    return @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\aarch64-linux-android-4.9\prebuilt\windows-x86_64\bin\aarch64-linux-android-addr2line.exe";
-                return @"PlaybackEngines/AndroidPlayer/NDK/toolchains/aarch64-linux-android-4.9/prebuilt/darwin-x86_64/bin/aarch64-linux-android-addr2line";
+                if (NDKVersion >= new Version(23, 1))
+                {
+                    if (Application.platform == RuntimePlatform.WindowsEditor)
+                        return @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-addr2line.exe";
+                    return @"PlaybackEngines/AndroidPlayer/NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-addr2line";
+                }
+                else
+                {
+                    if (Application.platform == RuntimePlatform.WindowsEditor)
+                        return @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\aarch64-linux-android-4.9\prebuilt\windows-x86_64\bin\aarch64-linux-android-addr2line.exe";
+                    return @"PlaybackEngines/AndroidPlayer/NDK/toolchains/aarch64-linux-android-4.9/prebuilt/darwin-x86_64/bin/aarch64-linux-android-addr2line";
+                }
+            }
+        }
+        
+        private Version NDKVersion
+        {
+            get
+            {
+                var ndkPath = Application.platform == RuntimePlatform.WindowsEditor ? @"Editor\Data\PlaybackEngines\AndroidPlayer\NDK" : @"PlaybackEngines/AndroidPlayer/NDK";
+                var sourceProperties = Path.Combine(unityHubPath, unityVersion, ndkPath, "source.properties");
+                if (!File.Exists(sourceProperties))
+                    throw new Exception($"Couldn't acquire NDK version, '{sourceProperties}' was not found");
+
+                var contents = File.ReadAllText(sourceProperties);
+                var regex = new Regex(@"Pkg\.Revision\s*=\s*(?<version>\S+)");
+                var match = regex.Match(contents);
+                if (match.Success)
+                {
+                    var versionText = match.Groups["version"].Value;
+                    if (!Version.TryParse(versionText, out var version))
+                        throw new Exception($"Couldn't resolve version from '{sourceProperties}', the value was '{versionText}'");
+                    return version;
+                }
+                else
+                {
+                    throw new Exception($"Couldn't not find NDK version inside '{sourceProperties}', file contents\n:{contents}");
+                }
             }
         }
         
